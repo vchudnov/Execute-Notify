@@ -1,0 +1,231 @@
+#!/bin/bash
+#
+# A utility to execute a command and notify the user upon completion.
+#
+# Copyright 2009, Victor Chudnovsky <victor.chudnovsky@gmail.com>
+# Credits: This work was inspired by http://wagiaalla.com/blog/?p=28 and
+# http://emacs-fu.blogspot.com/2009/11/showing-pop-ups.html
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version. This program is distributed in
+# the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+# PARTICULAR PURPOSE. See the GNU General Public License for more
+# details. You should have received a copy of the GNU General Public
+# License along with this program. If not, see
+# <http://www.gnu.org/licenses/>.
+
+basename=$(basename $0)
+dbg="$basename: "
+
+# form_option flag value
+#
+# Returns the string "--flag value" unless value is empty, in which
+# case it returns the empty string
+function form_option() {
+  local flag=$1
+  local value=$2
+  local option=""
+  if [[ -n "$value" ]]
+  then
+    option="$flag $value"
+  fi
+  echo $option
+}
+
+# set_one_flag_value command_root flag value_root variant
+#
+# Sets the global script variable ${command_root}_${variant} to be the
+# string needed to set a flag called $flag to the global script variable value
+# ${value_root}_${variant}.
+function set_one_flag_value() {
+  local command_root=$1
+  local flag=$2
+  local value_root=$3
+  local variant=$4
+  local cmd="${command_root}_${variant}=\$(form_option \"$flag\" \$${value_root}_${variant})" 
+  eval $cmd
+}
+
+# set_success_failure_flag_variants command_root flag value_root
+#
+# Sets the global script variable ${command_root}_success and
+# ${command_root}_failure to be the strings needed to set a flag
+# called $flag to the global script variables ${value_root}_success
+# and ${value_root}_failure, respectively.
+function set_success_failure_flag_variants() {
+  local command_root=$1
+  local flag=$2
+  local value_root=$3
+  set_one_flag_value $command_root $flag $value_root success
+  set_one_flag_value $command_root $flag $value_root failure
+}
+
+# show_flag_variants command_root
+#
+# For debugging purposes, displays the global script variables
+# ${command_root}_success and ${command_root}_failure.
+function show_flag_variants() {
+  local command_root=$1
+  eval "echo $dbg \"\" ${command_root}_success : \${${command_root}_success}"
+  eval "echo $dbg \"\" ${command_root}_failure : \${${command_root}_failure}"
+}
+
+# get_argument argument
+# 
+# If argument is of the form --XXX, returns XXX. Otherwise, returns
+# the empty string.
+function get_argument() {
+  local argument="$1"
+  expr "$argument" : "--\([a-z_]\+\)"
+}
+
+# debug arg1 arg2...
+#
+# If debug mode is on, echo arg1, arg2... to stderr.
+function debug() {
+  if [[ -n "$debug" ]]
+  then
+    while [[ -n "$1" ]]
+    do
+      echo "$1" 1>&2
+      shift
+    done
+  fi
+}
+
+# show_usage
+#
+# Echoes usage information for this utility
+function show_usage() {
+cat <<EOF
+$basename Execute a command and notify when finished
+Usage: $basename [FLAGS...] COMMAND [ARGS...]
+       executes COMMAND ARGS... and sends a notification to the status
+       panel upon completion, indicating the result of COMMAND. The
+       exit code of COMMAND is the exit of $basename.
+
+Each flag to $basename begins with "--"; flags take zero or one
+arguments. The first argument to $basename that is not interpreted as
+a flag or value is taken to be the command to execute.
+
+Possible no-argument flags are:
+  --help  Show this message
+  --debug Print debugging information about $basename
+
+Possible one-argument flags are:
+  --title Prefix to the "Success" or "Failure" title of the
+    notification
+
+  --command_label Description of the command to be used in the
+    notification text in place of the command itself. Useful for
+    succinctly describing a long command, or for use with --exit_code
+    flag
+
+  --exit_code Simulated exit code from COMMAND to use when generating
+    the notification, Setting this flag causes COMMAND to not actually
+    execute, and is useful for testing that the notification is
+    formatted as desired without actually invoking COMMAND or of the
+    form
+
+  --PROPERTY_OUTCOME where PROPERTY is one of "icon", "urgency", or
+    "expiration" and OUTCOME is one of "success" or "failure".
+    All the properties are used in creating and dispatching the
+    notification, but the outcome used depends on the exit code of the
+    command being run.
+       icon: the icon to be used in the notification
+       expiration: the duration of the notification (ms)
+       urgency: the notification urgency, as defined by send-notify
+
+Example:
+  $basename --icon_success /usr/share/icons/gnome/32x32/emblems/emblem-default.png \\
+            --expiration 600000 --title "Directory listing" ls
+EOF
+}
+
+# Default settings
+icon_success="/usr/share/icons/gnome/32x32/emblems/emblem-default.png"
+icon_failure="/usr/share/icons/gnome/32x32/emblems/emblem-important.png"
+urgency_success=""
+urgency_failure="critical"
+expiration_success=600000 # ten minutes
+expiration_failure=600000 # ten minutes
+command_label=""
+title=""
+
+# Get arguments to this utility
+possible_flag=$(get_argument "$1")
+while [[ -n "$possible_flag" ]]
+do
+  # Process the no-value arguments explictly...
+  case "$possible_flag" in
+    help)
+      show_usage;
+      exit 0;
+      ;;
+    debug)
+      debug=1
+      debug "$dbg entering debug mode"
+      ;;
+    *)
+      # ...but let the arguments that set state directly set the
+      # variables used by this script.
+      debug "$dbg setting '${possible_flag}' to '$2'"
+      eval "$possible_flag"=\"$2\"
+      shift
+      ;;
+  esac
+  shift
+  possible_flag=$(get_argument "$1")
+done
+
+# If no command_label was specified, use the command itself.
+if [[ -z "$command_label" ]]
+then
+  command_label=$(echo $@)
+fi
+
+# Based on the arguments passed in, set the various flags to
+# send-notify.
+set_success_failure_flag_variants "show_icon" "--icon" "icon"
+set_success_failure_flag_variants "expiration" "--expire-time" "expiration"
+set_success_failure_flag_variants "urgency" "--urgency" "urgency"
+
+# Echo state in debug mode.
+debug "$dbg flags:"
+debug "$(show_flag_variants show_icon)"
+debug "$(show_flag_variants expiration)"
+debug "$(show_flag_variants urgency)"
+
+# If no exit_code was provided, get one (by running the command left
+# in argv).
+if [[ -z "$exit_code" ]]
+then
+  ($@)
+  exit_code=$?
+fi
+
+# Determine success or failure messaging.
+if [[ $exit_code = 0 ]]
+then
+  result="success"
+  label_success="$title Success!"
+else
+  result="failure"
+  label_failure="$title Failure ($exit_code)"
+fi
+content=$(echo -e "${command_label}\n\n<i>`date +%c`</i>")
+
+# Build the appropriate notification command.
+cmd="notify-send \$show_icon_$result \$expiration_$result \$urgency_$result \"\$label_$result\""
+debug "$dbg $cmd \"$content\""
+debug "$dbg $(eval echo $cmd \"$content\")"
+
+# Notify, redirecting any stdout to stderr so as to allow this utility
+# to be used in stdout pipes.
+eval "$cmd \"$content\"" 1>&2
+
+# Pass along the exit code of the command to the calling process.
+exit $exit_code
