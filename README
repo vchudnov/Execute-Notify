@@ -1,0 +1,20 @@
+Execute-notify
+
+A utility to execute a command and notify the user upon
+completion. This uses libnotify.
+
+Instructions
+------------
+
+1. Make sure the 'en' script is on your path
+
+2. Make sure the hard-coded references to various filesystem locations are valid for your system (if not, modify properly):
+   a. /bin/bash
+   b. /usr/share/icons/gnome/.....
+
+3. Make sure the 'notify-send' command is on your path
+
+4. Enjoy.
+
+For more information, see:
+http://www.criticalexponent.org/blog/2009/12/13/execute-notify/
